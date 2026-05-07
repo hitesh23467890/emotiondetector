@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MindScan — Emotion AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #07090d;
+    --surface: #0d1117;
+    --surface2: #161b22;
+    --border: rgba(255,255,255,0.07);
+    --accent: #00e5ff;
+    --text: #cdd9e5;
+    --muted: #4a5568;
+    --happy:     #fbbf24;
+    --neutral:   #94a3b8;
+    --surprised: #f97316;
+    --sad:       #60a5fa;
+    --angry:     #f87171;
+    --fear:      #c084fc;
+    --disgust:   #4ade80;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.025) 1px, transparent 1px);
+    background-size: 44px 44px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── HEADER ── */
+  header {
+    position: relative; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 2rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(7,9,13,0.85);
+    backdrop-filter: blur(10px);
+  }
+
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.95rem;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+  }
+  .logo em { color: var(--text); opacity: 0.45; font-style: normal; }
+
+  .hdr-right { display: flex; align-items: center; gap: 16px; }
+
+  .status-pill {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .sdot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--muted); transition: all 0.3s;
+  }
+  .sdot.on { background: #22c55e; box-shadow: 0 0 8px #22c55e88; }
+  .sdot.scan { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+  /* ── MAIN GRID ── */
+  main {
+    position: relative; z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 370px;
+    gap: 1.25rem;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    align-items: start;
+  }
+
+  /* ── CAMERA ── */
+  .cam-panel { display: flex; flex-direction: column; gap: 0.9rem; }
+
+  .cam-wrap {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    aspect-ratio: 4/3;
+  }
+
+  .cam-wrap::after {
+    content: '';
+    position: absolute; inset: 0;
+    box-shadow: inset 0 0 80px rgba(0,229,255,0.03);
+    border-radius: 14px;
+    pointer-events: none; z-index: 3;
+  }
+
+  /* corner brackets */
+  .c { position: absolute; width: 22px; height: 22px; border-color: var(--accent); border-style: solid; z-index: 4; opacity: 0.5; transition: opacity 0.3s; }
+  .cam-wrap:hover .c { opacity: 0.9; }
+  .c.tl { top:12px; left:12px;  border-width: 2px 0 0 2px; }
+  .c.tr { top:12px; right:12px; border-width: 2px 2px 0 0; }
+  .c.bl { bottom:12px; left:12px;  border-width: 0 0 2px 2px; }
+  .c.br { bottom:12px; right:12px; border-width: 0 2px 2px 0; }
+
+  /* scan line */
+  .scanline {
+    position: absolute; left:0; right:0; height: 2px;
+    background: linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%);
+    top: 0; z-index: 5; opacity: 0; pointer-events: none;
+  }
+  .scanning .scanline { opacity: 1; animation: scanmove 1.4s linear infinite; }
+  @keyframes scanmove { from { top: 0% } to { top: 100% } }
+
+  video {
+    width: 100%; height: 100%;
+    object-fit: cover; display: none;
+    transform: scaleX(-1);
+  }
+
+  #faceCanvas {
+    position: absolute; top:0; left:0;
+    width:100%; height:100%;
+    pointer-events: none; z-index: 2;
+    transform: scaleX(-1);
+  }
+
+  .no-cam {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px; color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.7rem; letter-spacing: 0.1em;
+  }
+  .no-cam svg { opacity: 0.2; }
+
+  /* controls */
+  .controls { display: flex; gap: 0.6rem; }
+
+  .btn {
+    flex: 1; padding: 0.7rem 1rem;
+    border-radius: 8px;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.65rem; letter-spacing: 0.1em; font-weight: 700;
+    cursor: pointer; transition: all 0.18s; border: 1px solid;
+  }
+  .btn-primary {
+    background: var(--accent); border-color: var(--accent); color: #000;
+  }
+  .btn-primary:hover { box-shadow: 0 0 20px rgba(0,229,255,0.45); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  .btn-ghost {
+    background: transparent; border-color: var(--border); color: var(--muted);
+  }
+  .btn-ghost:hover:not(:disabled) { border-color: rgba(255,255,255,0.2); color: var(--text); }
+  .btn-ghost:disabled { opacity: 0.3; cursor: not-allowed; }
+  .btn-ghost.live-on { border-color: #f87171; color: #f87171; }
+
+  .err {
+    padding: 0.7rem 1rem; border-radius: 8px;
+    background: rgba(248,113,113,0.08);
+    border: 1px solid rgba(248,113,113,0.2);
+    color: #fca5a5;
+    font-family: 'Space Mono', monospace; font-size: 0.65rem; letter-spacing: 0.04em;
+    display: none;
+  }
+
+  /* ── RIGHT PANEL ── */
+  .results { display: flex; flex-direction: column; gap: 0.9rem; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.1rem 1.2rem;
+  }
+
+  .card-lbl {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.55rem; letter-spacing: 0.16em;
+    color: var(--muted); text-transform: uppercase;
+    margin-bottom: 0.9rem;
+  }
+
+  /* dominant */
+  .dom-wrap { text-align: center; padding: 0.6rem 0 0.8rem; }
+  .dom-emoji { font-size: 3.2rem; display: block; margin-bottom: 0.4rem; transition: all 0.4s; }
+  .dom-name {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.3rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--accent);
+    transition: color 0.4s;
+  }
+  .dom-conf { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+
+  /* idle placeholder */
+  .idle {
+    text-align: center; padding: 1.2rem 0.5rem;
+    color: var(--muted); font-size: 0.78rem; line-height: 1.7;
+  }
+  .idle-icon { display: block; font-size: 1.4rem; opacity: 0.2; margin-bottom: 0.4rem; }
+
+  /* bars */
+  .bars { display: flex; flex-direction: column; gap: 9px; }
+  .bar-row { display: flex; align-items: center; gap: 9px; }
+  .bar-lbl {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.6rem; letter-spacing: 0.04em;
+    width: 68px; text-transform: capitalize; color: var(--text); opacity: 0.75;
+  }
+  .bar-track {
+    flex: 1; height: 5px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 999px; overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%; border-radius: 999px;
+    transition: width 0.65s cubic-bezier(0.4,0,0.2,1);
+    width: 0%;
+  }
+  .bar-pct {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.58rem; color: var(--muted);
+    width: 34px; text-align: right;
+  }
+
+  /* faces badge */
+  .faces-badge {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.6rem; letter-spacing: 0.08em;
+    padding: 3px 10px; border-radius: 999px;
+    background: rgba(0,229,255,0.08);
+    border: 1px solid rgba(0,229,255,0.18);
+    color: var(--accent);
+    display: inline-block; margin-top: 0.6rem;
+  }
+
+  /* history */
+  .hist-strip { display: flex; gap: 5px; flex-wrap: wrap; }
+  .hist-chip {
+    font-family: 'Space Mono', monospace; font-size: 0.58rem;
+    padding: 3px 8px; border-radius: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted); letter-spacing: 0.04em;
+    transition: opacity 0.3s;
+  }
+
+  /* demo badge */
+  .demo-badge {
+    font-family: 'Space Mono', monospace; font-size: 0.58rem;
+    letter-spacing: 0.08em; padding: 3px 10px; border-radius: 999px;
+    background: rgba(251,191,36,0.08);
+    border: 1px solid rgba(251,191,36,0.25);
+    color: #fcd34d; display: inline-block; margin-bottom: 0.75rem;
+  }
+
+  @media (max-width: 750px) {
+    main { grid-template-columns: 1fr; padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">MIND<em>SCAN</em> &nbsp;//&nbsp; EMOTION AI</div>
+  <div class="hdr-right">
+    <div class="status-pill">
+      <div class="sdot" id="sdot"></div>
+      <span id="stext">STANDBY</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- LEFT: Camera -->
+  <div class="cam-panel">
+    <div class="cam-wrap" id="camWrap">
+      <div class="c tl"></div><div class="c tr"></div>
+      <div class="c bl"></div><div class="c br"></div>
+      <div class="scanline" id="scanLine"></div>
+
+      <div class="no-cam" id="noCam">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+          <path d="M23 7l-7 5 7 5V7z"/>
+          <rect x="1" y="5" width="15" height="14" rx="2"/>
+        </svg>
+        CAMERA INACTIVE
+      </div>
+
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="faceCanvas"></canvas>
+    </div>
+
+    <div class="err" id="errBox"></div>
+
+    <div class="controls">
+      <button class="btn btn-primary" id="btnStart" onclick="startCamera()">START CAMERA</button>
+      <button class="btn btn-ghost" id="btnSnap" onclick="analyzeOnce()" disabled>ANALYZE</button>
+      <button class="btn btn-ghost" id="btnLive" onclick="toggleLive()" disabled>LIVE MODE</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: Results -->
+  <div class="results">
+
+    <div class="card">
+      <div class="card-lbl">// dominant emotion</div>
+      <div id="domSection">
+        <div class="idle">
+          <span class="idle-icon">◎</span>
+          Start camera then click Analyze
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-lbl">// emotion breakdown</div>
+      <div id="barsSection">
+        <div class="idle" style="padding:0.6rem 0">
+          <span class="idle-icon" style="font-size:0.9rem">▬▬▬▬▬</span>
+          Awaiting scan...
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-lbl">// scan history</div>
+      <div id="histSection">
+        <div style="font-size:0.75rem;color:var(--muted)">No scans yet.</div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+const COLORS = {
+  happy:'#fbbf24', neutral:'#94a3b8', surprised:'#f97316',
+  sad:'#60a5fa', angry:'#f87171', fear:'#c084fc', disgust:'#4ade80'
+};
+const EMOJI = {
+  happy:'😊', neutral:'😐', surprised:'😲',
+  sad:'😢', angry:'😠', fear:'😨', disgust:'🤢'
+};
+
+let stream = null, liveTimer = null, isLive = false;
+let history = [];
+const video  = document.getElementById('video');
+const canvas = document.getElementById('faceCanvas');
+const ctx    = canvas.getContext('2d');
+
+/* ── Camera ── */
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    video.srcObject = stream;
+    video.style.display = 'block';
+    document.getElementById('noCam').style.display = 'none';
+    document.getElementById('btnStart').disabled = true;
+    document.getElementById('btnStart').textContent = 'ACTIVE';
+    document.getElementById('btnSnap').disabled = false;
+    document.getElementById('btnLive').disabled = false;
+    setStatus('READY', 'on');
+    hideErr();
+
+    video.addEventListener('loadedmetadata', () => {
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+    });
+  } catch(e) {
+    showErr('Camera access denied. Allow camera permissions and refresh.');
+  }
+}
+
+/* ── Capture frame as base64 ── */
+function captureFrame() {
+  const c = document.createElement('canvas');
+  c.width  = video.videoWidth  || 640;
+  c.height = video.videoHeight || 480;
+  c.getContext('2d').drawImage(video, 0, 0);
+  return c.toDataURL('image/jpeg', 0.85);
+}
+
+/* ── Single analyze ── */
+async function analyzeOnce() {
+  if (!stream) return;
+  await doAnalysis();
+}
+
+/* ── Core analysis ── */
+async function doAnalysis() {
+  setStatus('SCANNING', 'scan');
+  document.getElementById('camWrap').classList.add('scanning');
+
+  try {
+    const res  = await fetch('/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: captureFrame() })
+    });
+    const data = await res.json();
+
+    if (!res.ok || data.error) {
+      showErr(data.error || 'Server error');
+      setStatus('ERROR', '');
+    } else if (!data.success) {
+      showErr(data.error || 'No face detected — try better lighting.');
+      setStatus('READY', 'on');
+    } else {
+      hideErr();
+      renderResults(data);
+      addHistory(data.dominant_emotion);
+      if (data.demo_mode) showDemo();
+      setStatus('LIVE', 'on');
+      drawFaceBox(data.face_box, data.dominant_emotion);
+    }
+  } catch(e) {
+    showErr('Cannot reach Flask server. Is "python app.py" running?');
+    setStatus('ERROR', '');
+  }
+
+  document.getElementById('camWrap').classList.remove('scanning');
+}
+
+/* ── Draw face bounding box on canvas ── */
+function drawFaceBox(box, emotion) {
+  if (!box || box.length < 4) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const [x, y, w, h] = box;
+  const color = COLORS[emotion] || '#00e5ff';
+
+  // Scale box to canvas display size
+  const scaleX = canvas.width  / (video.videoWidth  || 640);
+  const scaleY = canvas.height / (video.videoHeight || 480);
+  const rx = x * scaleX, ry = y * scaleY;
+  const rw = w * scaleX, rh = h * scaleY;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 2;
+  ctx.strokeRect(rx, ry, rw, rh);
+
+  // label
+  ctx.fillStyle = color;
+  ctx.font = '13px Space Mono, monospace';
+  ctx.fillText((EMOJI[emotion] || '') + ' ' + emotion.toUpperCase(), rx + 4, ry - 6);
+}
+
+/* ── Render emotion results ── */
+function renderResults(data) {
+  const { dominant_emotion: dom, emotions, confidence, faces_detected } = data;
+  const color = COLORS[dom] || '#00e5ff';
+  const emoji = EMOJI[dom] || '🔍';
+
+  // Dominant card
+  document.getElementById('domSection').innerHTML = `
+    <div class="dom-wrap">
+      <span class="dom-emoji">${emoji}</span>
+      <div class="dom-name" style="color:${color}">${dom.toUpperCase()}</div>
+      <div class="dom-conf">${confidence.toFixed(1)}% confidence</div>
+      ${faces_detected > 1 ? `<div class="faces-badge">${faces_detected} FACES DETECTED</div>` : ''}
+    </div>`;
+
+  // Bars
+  const barsHTML = Object.entries(emotions).map(([e, v]) => `
+    <div class="bar-row">
+      <div class="bar-lbl">${e}</div>
+      <div class="bar-track">
+        <div class="bar-fill" data-w="${v}" style="background:${COLORS[e]||'#555'};width:0%"></div>
+      </div>
+      <div class="bar-pct">${v.toFixed(1)}%</div>
+    </div>`).join('');
+
+  document.getElementById('barsSection').innerHTML = `<div class="bars">${barsHTML}</div>`;
+
+  // Animate bars after paint
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    document.querySelectorAll('.bar-fill').forEach(b => {
+      b.style.width = b.dataset.w + '%';
+    });
+  }));
+}
+
+/* ── Scan history ── */
+function addHistory(emotion) {
+  history.unshift({ emotion, time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) });
+  if (history.length > 12) history.pop();
+  document.getElementById('histSection').innerHTML = `
+    <div class="hist-strip">
+      ${history.map((h, i) => `
+        <div class="hist-chip" style="opacity:${Math.max(1 - i * 0.07, 0.25)}">
+          ${EMOJI[h.emotion]||'?'} ${h.emotion} <span style="opacity:0.5">${h.time}</span>
+        </div>`).join('')}
+    </div>`;
+}
+
+/* ── Live mode ── */
+function toggleLive() {
+  isLive = !isLive;
+  const btn = document.getElementById('btnLive');
+  if (isLive) {
+    btn.textContent = 'STOP LIVE';
+    btn.classList.add('live-on');
+    liveTimer = setInterval(doAnalysis, 2500);
+    doAnalysis();
+  } else {
+    btn.textContent = 'LIVE MODE';
+    btn.classList.remove('live-on');
+    clearInterval(liveTimer);
+    setStatus('READY', 'on');
+  }
+}
+
+/* ── Helpers ── */
+function setStatus(text, dotClass) {
+  document.getElementById('stext').textContent = text;
+  const d = document.getElementById('sdot');
+  d.className = 'sdot' + (dotClass ? ' ' + dotClass : '');
+}
+
+function showErr(msg) {
+  const el = document.getElementById('errBox');
+  el.textContent = '// ' + msg;
+  el.style.display = 'block';
+}
+function hideErr() {
+  document.getElementById('errBox').style.display = 'none';
+}
+
+function showDemo() {
+  if (document.querySelector('.demo-badge')) return;
+  const b = document.createElement('div');
+  b.className = 'demo-badge';
+  b.textContent = 'DEMO MODE — install fer for real detection';
+  document.querySelector('.results').prepend(b);
+}
+</script>
+</body>
+</html>
